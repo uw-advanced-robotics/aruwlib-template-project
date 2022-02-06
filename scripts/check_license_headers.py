@@ -51,6 +51,8 @@ LICENSE_HEADER = '/*\n\
  * You should have received a copy of the GNU General Public License\n\
  * along with template-project.  If not, see <https://www.gnu.org/licenses/>.\n\
  */\n'
+COPYRIGHT = "Copyright (c)"
+AUTHOR = "Advanced Robotics at the University of Washington <robomstr@uw.edu>"
 
 if len(sys.argv) not in [ 1, 2 ]:
     print(USAGE)
@@ -69,7 +71,12 @@ def is_licensed_source_file(path, ignored_files):
 
 def file_has_valid_license_header(file):
     with open(file, 'r') as file_to_check:
-        if LICENSE_HEADER not in file_to_check.read():
+        license_lines = LICENSE_HEADER.splitlines()
+        num_lines = len(license_lines)
+        license_lines_to_check = file_to_check.read().splitlines()
+        if license_lines_to_check[2:num_lines] != license_lines[2:]:
+            return False
+        if COPYRIGHT not in license_lines_to_check[1] or AUTHOR not in license_lines_to_check[1]:
             return False
     return True
 
