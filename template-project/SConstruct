@@ -79,6 +79,8 @@ env.AppendUnique(CCFLAGS=["-D " + args["ROBOT_TYPE"]])
 # Find source files to compile
 if args["TARGET_ENV"] != "tests":
     ignored_dirs.append(SRC_TEST_PATH)
+else:
+    ignored_files += IGNORED_FILES_WHILE_TESTING
 sources = env.FindSourceFiles(".", ignorePaths=ignored_dirs, ignoreFiles=ignored_files)
 
 
