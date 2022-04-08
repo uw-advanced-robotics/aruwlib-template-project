@@ -29,20 +29,17 @@
 
 #include "modm/architecture/interface/delay.hpp"
 
+#include "drivers_singleton.hpp"
+
 /* arch includes ------------------------------------------------------------*/
 #include "tap/architecture/periodic_timer.hpp"
 #include "tap/architecture/profiler.hpp"
-
-/* communication includes ---------------------------------------------------*/
-#include "tap/drivers_singleton.hpp"
 
 /* error handling includes --------------------------------------------------*/
 #include "tap/errors/create_errors.hpp"
 
 /* control includes ---------------------------------------------------------*/
 #include "tap/architecture/clock.hpp"
-
-using tap::Drivers;
 
 /* define timers here -------------------------------------------------------*/
 tap::arch::PeriodicMilliTimer sendMotorTimeout(2);
@@ -67,7 +64,7 @@ int main()
      *      robot loop we must access the singleton drivers to update
      *      IO states and run the scheduler.
      */
-    tap::Drivers *drivers = tap::DoNotUse_getDrivers();
+    Drivers *drivers = DoNotUse_getDrivers();
 
     Board::initialize();
     initializeIo(drivers);
@@ -86,9 +83,8 @@ int main()
         if (sendMotorTimeout.execute())
         {
             PROFILE(drivers->profiler, drivers->mpu6500.periodicIMUUpdate, ());
-            PROFILE(drivers->profiler, drivers->errorController.updateLedDisplay, ());
             PROFILE(drivers->profiler, drivers->commandScheduler.run, ());
-            PROFILE(drivers->profiler, drivers->djiMotorTxHandler.processCanSendData, ());
+            PROFILE(drivers->profiler, drivers->djiMotorTxHandler.encodeAndSendCanData, ());
             PROFILE(drivers->profiler, drivers->terminalSerial.update, ());
         }
         modm::delay_us(10);
