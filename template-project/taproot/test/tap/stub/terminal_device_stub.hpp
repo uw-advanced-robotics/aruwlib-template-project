@@ -17,10 +17,11 @@
  * along with Taproot.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef TERMINAL_DEVICE_STUB_HPP_
-#define TERMINAL_DEVICE_STUB_HPP_
+#ifndef TAPROOT_TERMINAL_DEVICE_STUB_HPP_
+#define TAPROOT_TERMINAL_DEVICE_STUB_HPP_
 
 #include <queue>
+#include <string>
 
 #include "modm/io/iodevice.hpp"
 
@@ -60,10 +61,15 @@ public:
      */
     int readItemsFromWriteBuffer(std::vector<char> &items, std::size_t itemsToRead);
 
+    /**
+     * Reads all items from the write buffer, places them in a string, and returns the string.
+     */
+    std::string readAllItemsFromWriteBufferToString();
+
 private:
     std::deque<char> readBuffer;
     std::deque<char> writeBuffer;
 };
 }  // namespace tap::stub
 
-#endif  // TERMINAL_DEVICE_STUB_HPP_
+#endif  // TAPROOT_TERMINAL_DEVICE_STUB_HPP_

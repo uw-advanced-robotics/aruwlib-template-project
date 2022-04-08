@@ -26,6 +26,7 @@
 #include "remote_map_state.hpp"
 
 using namespace tap::errors;
+using namespace tap::communication::serial;
 
 namespace tap
 {
@@ -65,11 +66,7 @@ void CommandMapper::addMap(CommandMapping *mapping)
     {
         if (mapStateEqual(*cmap, *mapping))
         {
-            RAISE_ERROR(
-                drivers,
-                "failed to insert io mapping",
-                tap::errors::CONTROLLER_MAPPER,
-                tap::errors::ControllerMapperErrorType::INVALID_ADD);
+            RAISE_ERROR(drivers, "failed to insert io mapping");
             return;
         }
     }

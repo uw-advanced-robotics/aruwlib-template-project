@@ -17,8 +17,8 @@
  * along with Taproot.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef COMMAND_SCHEDULER_HPP_
-#define COMMAND_SCHEDULER_HPP_
+#ifndef TAPROOT_COMMAND_SCHEDULER_HPP_
+#define TAPROOT_COMMAND_SCHEDULER_HPP_
 
 #include <iterator>
 
@@ -33,6 +33,23 @@ namespace control
 {
 class Command;
 class Subsystem;
+
+/**
+ * Abstract base class for a functor that defines how a robot is considered
+ * "disconnected" in the CommandScheduler. When the functor returns true, the
+ * robot is then considered disconnected and will end all Commands in the
+ * CommandScheduler and disallow new Commands from being added.
+ *
+ * By default, the SafeDisconnectFunction will always return false, i.e.,
+ * allow the CommandScheduler to continue running Commands in a
+ * "disconnected" state.
+ */
+class SafeDisconnectFunction
+{
+public:
+    SafeDisconnectFunction(){};
+    virtual bool operator()() { return false; }
+};
 
 /**
  * Class for handling all the commands you would like to currently run.
@@ -59,23 +76,28 @@ class Subsystem;
  * and remove commands from the scheduler.
  *
  * The main use case will be to be refreshing all the main subsystems running
- * on the robot. To do so, you should call `getMainScheduler()` to access this
- * base scheduler. Here is an example of how to do this:
+ * on the robot. You should access the main scheduler via the global `tap::Drivers *`
+ * instance, which should have an instance of a `CommandScheduler` called  `commandScheduler`.
+ * The below example code registers a subsystem (`sub`) and adds a command (`cmd`) to
+ * the scheduler. Then the scheduler is run over and over, in a loop.
  *
  * ```
- * // A class that has Command as a base class.
+ * // A class that has Subsystem as a base class.
  * CoolSubsystem sub;
- * // A class that has Subsystem as a base class that requires
+ * // A class that has Command as a base class that requires
  * // the subsystem above. In the constructor of the ControlCoolCommand,
- * // you must call `addSubsystemRequirement(dynamic_cast<Subsystem*>(subsystem))`;
+ * // you must call `addSubsystemRequirement(sub)`, where `sub` is the
+ * // `CoolSubsystem` defined above.
  * ControlCoolCommand cmd(&sub);
  *
- * CommandScheduler::getMainScheduler().registerSubsystem(&sub);
- * CommandScheduler::getMainScheduler().addCommand(&cmd);
+ * drivers->commandScheduler.registerSubsystem(&sub);
+ * drivers->commandScheduler.addCommand(&cmd);
  *
- * while (1) {
- *     // The subsystem will refresh forever and the command until it is not finished.
- *     CommandScheduler::getMainScheduler().run();
+ * while (1)
+ * {
+ *     // The subsystem will refresh forever and the command will execute until it
+ *     // is finished.
+ *     drivers->commandScheduler.run();
  * }
  * ```
  *
@@ -86,7 +108,11 @@ class Subsystem;
 class CommandScheduler
 {
 public:
-    CommandScheduler(Drivers* drivers, bool masterScheduler = false);
+    CommandScheduler(
+        Drivers* drivers,
+        bool masterScheduler = false,
+        SafeDisconnectFunction* safeDisconnectFunction =
+            &CommandScheduler::defaultSafeDisconnectFunction);
     DISALLOW_COPY_AND_ASSIGN(CommandScheduler)
     mockable ~CommandScheduler();
 
@@ -160,6 +186,14 @@ public:
      *      an error is added to the error handler.
      */
     mockable void registerSubsystem(Subsystem* subsystem);
+
+    /**
+     * @brief Set the SafeDisconnectFunction to the given function.
+     *
+     * @param[in] func the function that the CommandScheduler will use to
+     *      determine what constitutes a "disconnected" state.
+     */
+    mockable void setSafeDisconnectFunction(SafeDisconnectFunction* func);
 
     /**
      * @param[in] subsystem the subsystem to check
@@ -259,6 +293,8 @@ private:
     static constexpr float MAX_ALLOWABLE_SCHEDULER_RUNTIME = 100;
     static constexpr int MAX_SUBSYSTEM_COUNT = sizeof(subsystem_scheduler_bitmap_t) * 8;
     static constexpr int MAX_COMMAND_COUNT = sizeof(command_scheduler_bitmap_t) * 8;
+    static constexpr subsystem_scheduler_bitmap_t LSB_ONE_HOT_SUBSYSTEM_BITMAP = 1;
+    static constexpr command_scheduler_bitmap_t LSB_ONE_HOT_COMMAND_BITMAP = 1;
     static constexpr int INVALID_ITER_INDEX = -1;
 
     /**
@@ -293,7 +329,24 @@ private:
      */
     static bool masterSchedulerExists;
 
+    /**
+     * Returns true if the remote is disconnected and the safeDisconnectMode flag is
+     * enabled.
+     */
+    bool safeDisconnected();
+
     Drivers* drivers;
+
+    /**
+     * A global SafeDisconnectFunction used by CommandScheduler by default.
+     */
+    static SafeDisconnectFunction defaultSafeDisconnectFunction;
+
+    /**
+     * The SafeDisconnectFunction used by the CommandScheduler to determine
+     * the "disconnected" state.
+     */
+    SafeDisconnectFunction* safeDisconnectFunction;
 
     /**
      * Each bit in the bitmap represents a unique subsystem that has been constructed
@@ -324,4 +377,4 @@ private:
 
 }  // namespace tap
 
-#endif  // COMMAND_SCHEDULER_HPP_
+#endif  // TAPROOT_COMMAND_SCHEDULER_HPP_

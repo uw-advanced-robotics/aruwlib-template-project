@@ -17,8 +17,10 @@
  * along with Taproot.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef STRTOK_HPP_
-#define STRTOK_HPP_
+#ifndef TAPROOT_STRTOK_HPP_
+#define TAPROOT_STRTOK_HPP_
+
+#ifndef __DOXYGEN__
 
 /**
  * Source code from glibc/string/strtok_r.c. arm-none-eabi-gcc does not have strtok_r,
@@ -26,4 +28,6 @@
  */
 char *strtokR(char *s, const char *delim, char **savePtr);
 
-#endif  // STRTOK_HPP_
+#endif
+
+#endif  // TAPROOT_STRTOK_HPP_

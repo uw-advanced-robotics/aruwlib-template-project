@@ -39,6 +39,7 @@ Subsystem *CommandScheduler::globalSubsystemRegistrar[CommandScheduler::MAX_SUBS
 Command *CommandScheduler::globalCommandRegistrar[CommandScheduler::MAX_COMMAND_COUNT];
 int CommandScheduler::maxSubsystemIndex = 0;
 int CommandScheduler::maxCommandIndex = 0;
+SafeDisconnectFunction CommandScheduler::defaultSafeDisconnectFunction;
 
 int CommandScheduler::constructCommand(Command *command)
 {
@@ -131,15 +132,16 @@ void CommandScheduler::destructSubsystem(Subsystem *subsystem)
     }
 }
 
-CommandScheduler::CommandScheduler(Drivers *drivers, bool masterScheduler) : drivers(drivers)
+CommandScheduler::CommandScheduler(
+    Drivers *drivers,
+    bool masterScheduler,
+    SafeDisconnectFunction *safeDisconnectFunction)
+    : drivers(drivers),
+      safeDisconnectFunction(safeDisconnectFunction)
 {
     if (masterScheduler && masterSchedulerExists)
     {
-        RAISE_ERROR(
-            drivers,
-            "master scheduler already exists",
-            Location::COMMAND_SCHEDULER,
-            CommandSchedulerErrorType::MASTER_SCHEDULER_ALREADY_EXISTS);
+        RAISE_ERROR(drivers, "master scheduler already exists");
     }
     else
     {
@@ -181,28 +183,42 @@ void CommandScheduler::run()
         return;
     }
 
-    // Execute commands in the addedCommandBitmap, remove any that are finished
-    for (auto it = cmdMapBegin(); it != cmdMapEnd(); it++)
+    if (safeDisconnected())
     {
-        (*it)->execute();
-        if ((*it)->isFinished())
+        // End all commands running. They were interrupted by the remote disconnecting.
+        for (auto it = cmdMapBegin(); it != cmdMapEnd(); it++)
         {
-            removeCommand(*it, false);
+            removeCommand(*it, true);
+        }
+    }
+    else
+    {
+        // Execute commands in the addedCommandBitmap, remove any that are finished
+        for (auto it = cmdMapBegin(); it != cmdMapEnd(); it++)
+        {
+            (*it)->execute();
+            if ((*it)->isFinished())
+            {
+                removeCommand(*it, false);
+            }
         }
     }
 
-    // Refresh subsystems in the registeredSubsystemBitmap
-    for (auto it = subMapBegin(); it != subMapEnd(); it++)
+    // Only refresh subsystems if this is the master scheduler
+    if (isMasterScheduler)
     {
-        // Only subsystems in the master scheduler shall be refreshed
-        if (isMasterScheduler)
+        // Refresh subsystems in the registeredSubsystemBitmap
+        for (auto it = subMapBegin(); it != subMapEnd(); it++)
         {
             (*it)->refresh();
 
             Command *defaultCmd;
-            // If the current subsystem does not have an associated command and the current
+            // If the remote is connected given the scheduler is in safe disconnect mode and
+            // the current subsystem does not have an associated command and the current
             // subsystem has a default command, add it
-            if (!(subsystemsAssociatedWithCommandBitmap & (1UL << (*it)->getGlobalIdentifier())) &&
+            if (!safeDisconnected() &&
+                !(subsystemsAssociatedWithCommandBitmap &
+                  (LSB_ONE_HOT_SUBSYSTEM_BITMAP << (*it)->getGlobalIdentifier())) &&
                 ((defaultCmd = (*it)->getDefaultCommand()) != nullptr))
             {
                 addCommand(defaultCmd);
@@ -219,33 +235,25 @@ void CommandScheduler::run()
         // to complete all this stuff, if it does something
         // is seriously wrong (i.e. you are adding subsystems unchecked or the scheduler
         // itself is broken).
-        RAISE_ERROR(
-            drivers,
-            "scheduler took longer than MAX_ALLOWABLE_SCHEDULER_RUNTIME",
-            Location::COMMAND_SCHEDULER,
-            CommandSchedulerErrorType::RUN_TIME_OVERFLOW);
+        RAISE_ERROR(drivers, "scheduler took longer than MAX_ALLOWABLE_SCHEDULER_RUNTIME");
     }
 #endif
 }
 
 void CommandScheduler::addCommand(Command *commandToAdd)
 {
-    if (runningHardwareTests)
+    if (safeDisconnected())
     {
-        RAISE_ERROR(
-            drivers,
-            "attempting to add command while running tests",
-            Location::COMMAND_SCHEDULER,
-            CommandSchedulerErrorType::ADD_COMMAND_WHILE_TESTING);
+        return;
+    }
+    else if (runningHardwareTests)
+    {
+        RAISE_ERROR(drivers, "attempting to add command while running tests");
         return;
     }
     else if (commandToAdd == nullptr)
     {
-        RAISE_ERROR(
-            drivers,
-            "attempting to add nullptr command",
-            Location::COMMAND_SCHEDULER,
-            CommandSchedulerErrorType::ADDING_NULLPTR_COMMAND);
+        RAISE_ERROR(drivers, "attempting to add nullptr command");
         return;
     }
     else if (!commandToAdd->isReady())
@@ -258,15 +266,11 @@ void CommandScheduler::addCommand(Command *commandToAdd)
 
     // Check to see if all the requirements are in the subsytemToCommandMap
     if ((requirementsBitwise & registeredSubsystemBitmap) != requirementsBitwise ||
-        requirementsBitwise == 0)
+        requirementsBitwise == static_cast<subsystem_scheduler_bitmap_t>(0))
     {
         // the command you are trying to add has a subsystem that is not in the
         // scheduler, so you cannot add it (will lead to undefined control behavior)
-        RAISE_ERROR(
-            drivers,
-            "Attempting to add a command without subsystem in the scheduler",
-            Location::COMMAND_SCHEDULER,
-            CommandSchedulerErrorType::ADD_COMMAND_WITHOUT_REGISTERED_SUB);
+        RAISE_ERROR(drivers, "Attempting to add a command without subsystem in the scheduler");
         return;
     }
 
@@ -274,7 +278,8 @@ void CommandScheduler::addCommand(Command *commandToAdd)
     for (auto it = cmdMapBegin(); it != cmdMapEnd(); it++)
     {
         // Does this command's requierments intersect the new command?
-        if (((*it)->getRequirementsBitwise() & requirementsBitwise) != 0)
+        if (((*it)->getRequirementsBitwise() & requirementsBitwise) !=
+            static_cast<subsystem_scheduler_bitmap_t>(0))
         {
             removeCommand(*it, true);
         }
@@ -284,23 +289,20 @@ void CommandScheduler::addCommand(Command *commandToAdd)
     subsystemsAssociatedWithCommandBitmap |= requirementsBitwise;
     commandToAdd->initialize();
     // Add the command to the command bitmap
-    addedCommandBitmap |= (1UL << commandToAdd->getGlobalIdentifier());
+    addedCommandBitmap |= LSB_ONE_HOT_COMMAND_BITMAP << commandToAdd->getGlobalIdentifier();
 }
 
 bool CommandScheduler::isCommandScheduled(const Command *command) const
 {
-    return command != nullptr && (addedCommandBitmap & (1UL << command->getGlobalIdentifier()));
+    return command != nullptr &&
+           (addedCommandBitmap & (LSB_ONE_HOT_COMMAND_BITMAP << command->getGlobalIdentifier()));
 }
 
 void CommandScheduler::removeCommand(Command *command, bool interrupted)
 {
     if (command == nullptr)
     {
-        RAISE_ERROR(
-            drivers,
-            "trying to remove nullptr command",
-            Location::COMMAND_SCHEDULER,
-            CommandSchedulerErrorType::REMOVE_NULLPTR_COMMAND);
+        RAISE_ERROR(drivers, "trying to remove nullptr command");
         return;
     }
     else if (!isCommandScheduled(command))
@@ -314,38 +316,39 @@ void CommandScheduler::removeCommand(Command *command, bool interrupted)
     subsystemsAssociatedWithCommandBitmap &= ~command->getRequirementsBitwise();
 
     // Remove the command from the command bitmap
-    addedCommandBitmap &= ~(1UL << command->getGlobalIdentifier());
+    addedCommandBitmap &= ~(LSB_ONE_HOT_COMMAND_BITMAP << command->getGlobalIdentifier());
 }
+
+void CommandScheduler::setSafeDisconnectFunction(SafeDisconnectFunction *func)
+{
+    this->safeDisconnectFunction = func;
+}
+
+bool CommandScheduler::safeDisconnected() { return this->safeDisconnectFunction->operator()(); }
 
 void CommandScheduler::registerSubsystem(Subsystem *subsystem)
 {
     if (subsystem == nullptr)
     {
-        RAISE_ERROR(
-            drivers,
-            "trying to register nullptr subsystem",
-            Location::COMMAND_SCHEDULER,
-            CommandSchedulerErrorType::ADDING_NULLPTR_SUBSYSTEM);
+        RAISE_ERROR(drivers, "trying to register nullptr subsystem");
     }
     else if (isSubsystemRegistered(subsystem))
     {
-        RAISE_ERROR(
-            drivers,
-            "subsystem is already added",
-            Location::COMMAND_SCHEDULER,
-            CommandSchedulerErrorType::ADDING_ALREADY_ADDED_SUBSYSTEM);
+        RAISE_ERROR(drivers, "subsystem is already added");
     }
     else
     {
         // Add the subsystem to the registered subsystem bitmap
-        registeredSubsystemBitmap |= (1UL << subsystem->getGlobalIdentifier());
+        registeredSubsystemBitmap |=
+            (LSB_ONE_HOT_SUBSYSTEM_BITMAP << subsystem->getGlobalIdentifier());
     }
 }
 
 bool CommandScheduler::isSubsystemRegistered(const Subsystem *subsystem) const
 {
     return subsystem != nullptr &&
-           ((1ul << subsystem->getGlobalIdentifier()) & registeredSubsystemBitmap);
+           ((LSB_ONE_HOT_SUBSYSTEM_BITMAP << subsystem->getGlobalIdentifier()) &
+            registeredSubsystemBitmap);
 }
 
 void CommandScheduler::startHardwareTests()
@@ -384,7 +387,7 @@ int CommandScheduler::subsystemListSize() const
     int size = 0;
     for (int i = 0; i < maxSubsystemIndex; i++)
     {
-        if (registeredSubsystemBitmap & (1UL << i))
+        if (registeredSubsystemBitmap & (LSB_ONE_HOT_SUBSYSTEM_BITMAP << i))
         {
             size++;
         }
@@ -397,7 +400,7 @@ int CommandScheduler::commandListSize() const
     int size = 0;
     for (int i = 0; i < maxCommandIndex; i++)
     {
-        if (addedCommandBitmap & (1UL << i))
+        if (addedCommandBitmap & (LSB_ONE_HOT_COMMAND_BITMAP << i))
         {
             size++;
         }
@@ -439,7 +442,7 @@ CommandScheduler::CommandIterator::CommandIterator(CommandScheduler *scheduler, 
         // If the curr index is pointing somewhere in the valid range of commands but the command
         // associated with the index is not in the current added commands bitmap, increment the
         // iterator to find the next valid index
-        if (!(scheduler->addedCommandBitmap & (1UL << currIndex)))
+        if (!(scheduler->addedCommandBitmap & (LSB_ONE_HOT_COMMAND_BITMAP << currIndex)))
         {
             (*this)++;
         }
@@ -462,7 +465,7 @@ CommandScheduler::CommandIterator &CommandScheduler::CommandIterator::operator++
     while (currIndex < maxCommandIndex)
     {
         // Is the current index in the bitmap of added commands?
-        if (scheduler->addedCommandBitmap & (1UL << currIndex))
+        if (scheduler->addedCommandBitmap & (LSB_ONE_HOT_COMMAND_BITMAP << currIndex))
         {
             // We found the correct index
             return *this;
@@ -509,7 +512,7 @@ CommandScheduler::SubsystemIterator::SubsystemIterator(CommandScheduler *schedul
         // If the curr index is pointing somewhere in the valid range of subsystems but the
         // subsystem associated with the index is not in the current registered subsystem bitmap,
         // increment the iterator to find the next valid index
-        if (!(scheduler->registeredSubsystemBitmap & (1UL << currIndex)))
+        if (!(scheduler->registeredSubsystemBitmap & (LSB_ONE_HOT_SUBSYSTEM_BITMAP << currIndex)))
         {
             (*this)++;
         }
@@ -532,7 +535,7 @@ CommandScheduler::SubsystemIterator &CommandScheduler::SubsystemIterator::operat
     while (currIndex < maxSubsystemIndex)
     {
         // Is the current index in the bitmap of added commands?
-        if (scheduler->registeredSubsystemBitmap & (1UL << currIndex))
+        if (scheduler->registeredSubsystemBitmap & (LSB_ONE_HOT_SUBSYSTEM_BITMAP << currIndex))
         {
             // We found the correct index
             return *this;

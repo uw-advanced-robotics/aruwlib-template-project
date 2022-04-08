@@ -17,8 +17,8 @@
  * along with Taproot.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef COMMAND_MAPPER_HPP_
-#define COMMAND_MAPPER_HPP_
+#ifndef TAPROOT_COMMAND_MAPPER_HPP_
+#define TAPROOT_COMMAND_MAPPER_HPP_
 
 #include <vector>
 
@@ -41,10 +41,18 @@ class CommandMapping;
  * is received.
  *
  * For example, given the command `coolCommand`, to map a hold mapping
- * to the left switch in the up position, we call
- * `addHoldMapping(RemoteMapState(
- *      Remote::Switch::LEFT_SWITCH, Remote::SwitchState::UP),
- *      {&coolCommand});`
+ * to the left switch in the up position, we define a `HoldCommandMapping`
+ * and then add it to the `CommandMapper` as follows (where `drivers` is assumed
+ * to be a global drivers object that has a `CommandMapper` object):
+ *
+ * ```
+ * HoldCommandMapping leftSwitchUp(
+ *      drivers,
+ *      {&coolCommand},
+ *      RemoteMapState(Remote::Switch::LEFT_SWITCH, Remote::SwitchState::UP));
+ *
+ * drivers->commandMapper.addMap(&leftSwitchUp);
+ * ```
  *
  * @note Only unique RemoteMapStates can be added to the CommandMapper. This ensures
  *      a user will not accidently map two `Command`s to the same RemoteMapState without
@@ -67,8 +75,8 @@ public:
      */
     mockable void handleKeyStateChange(
         uint16_t key,
-        Remote::SwitchState leftSwitch,
-        Remote::SwitchState rightSwitch,
+        tap::communication::serial::Remote::SwitchState leftSwitch,
+        tap::communication::serial::Remote::SwitchState rightSwitch,
         bool mouseL,
         bool mouseR);
 
@@ -109,4 +117,4 @@ private:
 }  // namespace control
 }  // namespace tap
 
-#endif  // COMMAND_MAPPER_HPP_
+#endif  // TAPROOT_COMMAND_MAPPER_HPP_
