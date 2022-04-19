@@ -1,4 +1,3 @@
-
 # Copyright (c) 2020-2021 Advanced Robotics at the University of Washington <robomstr@uw.edu>
 #
 # This file is part of template-project.
@@ -37,11 +36,8 @@ env_cpy = env.Clone()
 # Append on the global robot target build flag
 env_cpy.AppendUnique(CCFLAGS=["-D " + args["ROBOT_TYPE"]])
 
-if args["COMPILE_SRC"]:
-    ignored_files.append("main_src_not_compiled.cpp")
-    rawSrcs = env_cpy.FindSourceFiles(".", ignorePaths=ignored_dirs, ignoreFiles=ignored_files)
-else:
-    rawSrcs = []
+ignored_files.append("main_src_not_compiled.cpp")
+rawSrcs = env_cpy.FindSourceFiles(".", ignorePaths=ignored_dirs, ignoreFiles=ignored_files)
 
 for source in rawSrcs:
     sources.append(env_cpy.Object(source))
