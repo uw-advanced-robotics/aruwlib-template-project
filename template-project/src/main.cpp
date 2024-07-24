@@ -22,7 +22,7 @@
 #include <iostream>
 
 #include "tap/communication/tcp-server/tcp_server.hpp"
-#include "tap/motor/motorsim/sim_handler.hpp"
+#include "tap/motor/motorsim/dji_motor_sim_handler.hpp"
 #endif
 
 #include "tap/board/board.hpp"
@@ -73,7 +73,7 @@ int main()
     initializeIo(drivers);
 
 #ifdef PLATFORM_HOSTED
-    tap::motorsim::SimHandler::resetMotorSims();
+    tap::motor::motorsim::DjiMotorSimHandler::getInstance()->resetMotorSims();
     // Blocking call, waits until Windows Simulator connects.
     tap::communication::TCPServer::MainServer()->getConnection();
 #endif
@@ -114,7 +114,7 @@ static void initializeIo(src::Drivers *drivers)
 static void updateIo(src::Drivers *drivers)
 {
 #ifdef PLATFORM_HOSTED
-    tap::motorsim::SimHandler::updateSims();
+    tap::motor::motorsim::DjiMotorSimHandler::getInstance()->updateSims();
 #endif
 
     drivers->canRxHandler.pollCanData();
