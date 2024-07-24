@@ -44,7 +44,8 @@
 #include "tap/architecture/clock.hpp"
 
 /* define timers here -------------------------------------------------------*/
-tap::arch::PeriodicMilliTimer sendMotorTimeout(2);
+static constexpr float MAIN_LOOP_FREQUENCY = 500.0f;
+tap::arch::PeriodicMilliTimer sendMotorTimeout(1000.0f / MAIN_LOOP_FREQUENCY);
 
 // Place any sort of input/output initialization here. For example, place
 // serial init stuff here.
@@ -103,7 +104,7 @@ static void initializeIo(src::Drivers *drivers)
     drivers->can.initialize();
     drivers->errorController.init();
     drivers->remote.initialize();
-    drivers->mpu6500.init();
+    drivers->mpu6500.init(MAIN_LOOP_FREQUENCY, 0.1, 0);
     drivers->refSerial.initialize();
     drivers->terminalSerial.initialize();
     drivers->schedulerTerminalHandler.init();
