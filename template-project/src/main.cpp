@@ -22,7 +22,7 @@
 #include <iostream>
 
 #include "tap/communication/tcp-server/tcp_server.hpp"
-#include "tap/motor/motorsim/sim_handler.hpp"
+#include "tap/motor/motorsim/dji_motor_sim_handler.hpp"
 #endif
 
 #include "tap/board/board.hpp"
@@ -44,7 +44,8 @@
 #include "tap/architecture/clock.hpp"
 
 /* define timers here -------------------------------------------------------*/
-tap::arch::PeriodicMilliTimer sendMotorTimeout(2);
+static constexpr float MAIN_LOOP_FREQUENCY = 500.0f;
+tap::arch::PeriodicMilliTimer sendMotorTimeout(1000.0f / MAIN_LOOP_FREQUENCY);
 
 // Place any sort of input/output initialization here. For example, place
 // serial init stuff here.
@@ -72,7 +73,7 @@ int main()
     initializeIo(drivers);
 
 #ifdef PLATFORM_HOSTED
-    tap::motorsim::SimHandler::resetMotorSims();
+    tap::motor::motorsim::DjiMotorSimHandler::getInstance()->resetMotorSims();
     // Blocking call, waits until Windows Simulator connects.
     tap::communication::TCPServer::MainServer()->getConnection();
 #endif
@@ -103,7 +104,7 @@ static void initializeIo(src::Drivers *drivers)
     drivers->can.initialize();
     drivers->errorController.init();
     drivers->remote.initialize();
-    drivers->mpu6500.init();
+    drivers->mpu6500.init(MAIN_LOOP_FREQUENCY, 0.1, 0);
     drivers->refSerial.initialize();
     drivers->terminalSerial.initialize();
     drivers->schedulerTerminalHandler.init();
@@ -113,7 +114,7 @@ static void initializeIo(src::Drivers *drivers)
 static void updateIo(src::Drivers *drivers)
 {
 #ifdef PLATFORM_HOSTED
-    tap::motorsim::SimHandler::updateSims();
+    tap::motor::motorsim::DjiMotorSimHandler::getInstance()->updateSims();
 #endif
 
     drivers->canRxHandler.pollCanData();
